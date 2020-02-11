@@ -1,4 +1,4 @@
-version: '2'
+version: '3'
 
 services:
   app:
@@ -10,7 +10,7 @@ services:
       - WORDPRESS_DB_PASSWORD=changeme!
       - WORDPRESS_DB_NAME=wordpress
     labels:
-      - traefik.frontend.rule=Host:wp.docker.localhost
+      - "traefik.http.routers.frontend.rule=Host(`${PROJECT_BASE_URL}`)"
       - traefik.docker.network=proxy_webgateway
     volumes:
       - app:/var/www/html
@@ -43,6 +43,9 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     labels:
       - "traefik.http.routers.${PROJECT_NAME}_portainer.rule=Host(`portainer.${PROJECT_BASE_URL}`)"
+    networks:
+      - web
+      - backend
 
 networks:
   web:
