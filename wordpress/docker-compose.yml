@@ -3,15 +3,18 @@ version: '3'
 services:
   wordpress:
     image: 12evgen/topfashion-backend:latest
-    restart: unless-stopped
+    container_name: "${PROJECT_NAME}_wordpress"
     environment:
-      - WORDPRESS_DB_HOST:mysql:3306
-      - WORDPRESS_DB_USER=$DB_USER
-      - WORDPRESS_DB_PASSWORD=$DB_PASSWORD
-      - WORDPRESS_DB_NAME=$DB_NAME
+      WORDPRESS_DB_HOST: mysql:3306
+      WORDPRESS_DB_USER: $DB_USER
+      WORDPRESS_DB_PASSWORD: $DB_PASSWORD
+      WORDPRESS_DB_NAME: $DB_NAME
     labels:
-      - "traefik.http.routers.frontend.rule=Host(`${PROJECT_BASE_URL}`)"
+      - traefik.enable=true
       - traefik.docker.network=proxy_webgateway
+      - traefik.http.routers.${PROJECT_NAME}.rule=Host(`${PROJECT_BASE_URL}`)
+      - traefik.http.routers.${PROJECT_NAME}.entrypoints=https
+      - traefik.http.routers.${PROJECT_NAME}.tls.certresolver=default
     volumes:
       - wordpress:/var/www/html
     networks:
@@ -22,6 +25,7 @@ services:
 
   mysql:
     image: mariadb
+    container_name: "${PROJECT_NAME}_mysql"
     restart: unless-stopped
     environment:
       - MYSQL_ROOT_PASSWORD=$DB_ROOT_PASSWORD
