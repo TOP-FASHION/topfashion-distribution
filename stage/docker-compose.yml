@@ -1,0 +1,113 @@
+version: "3"
+
+services:
+  proxy:
+    image: traefik:v2.0
+    container_name: "traefik"
+    command:
+      - --api.insecure=true
+      - --providers.docker=true
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./traefik/traefik.toml:/etc/traefik/traefik.toml:ro
+      - ./traefik/traefik.config.toml:/etc/traefik/traefik.config.toml:ro
+      - ./certs:/etc/certs:ro
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.traefik.entrypoints=https
+      - traefik.http.routers.traefik.rule=Host(`traefik.${PROJECT_BASE_URL}`)
+      - traefik.http.routers.traefik.tls=true
+      - traefik.http.routers.traefik.tls.certresolver=default
+      - traefik.http.routers.traefik.service=api@internal
+
+      # global redirect to https
+      - traefik.http.routers.http-catchall.rule=hostregexp(`{host:.+}`)
+      - traefik.http.routers.http-catchall.entrypoints=http
+      - traefik.http.routers.http-catchall.middlewares=redirect-to-https
+
+      # middleware redirect
+      - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
+
+  mariadb:
+    image: mariadb:$MARIADB_TAG
+    container_name: "${PROJECT_NAME}_mariadb"
+    stop_grace_period: 30s
+    environment:
+      MYSQL_ROOT_PASSWORD: $DB_ROOT_PASSWORD
+      MYSQL_DATABASE: $DB_NAME
+      MYSQL_USER: $DB_USER
+      MYSQL_PASSWORD: $DB_PASSWORD
+    labels:
+      - traefik.enable=false
+    volumes:
+      - ./database:/docker-entrypoint-initdb.d:ro
+#      - mariadb:/var/lib/mysql
+
+  wordpress-php:
+    image: 12evgen/topfashion-backend:latest
+    container_name: "${PROJECT_NAME}_wordpress-php"
+    depends_on:
+      - mariadb
+    restart: unless-stopped
+    environment:
+      WORDPRESS_DB_HOST: $DB_HOST
+      WORDPRESS_DB_USER: $DB_USER
+      WORDPRESS_DB_PASSWORD: $DB_PASSWORD
+      WORDPRESS_DB_NAME: $DB_NAME
+    volumes:
+      - ./wordpress:/var/www/html
+
+  nginx:
+    image: wodby/nginx:$NGINX_TAG
+    container_name: "${PROJECT_NAME}_nginx"
+    depends_on:
+      - wordpress-php
+    environment:
+      NGINX_STATIC_OPEN_FILE_CACHE: "off"
+      NGINX_ERROR_LOG_LEVEL: debug
+      NGINX_BACKEND_HOST: wordpress-php
+      NGINX_VHOST_PRESET: wordpress
+    volumes:
+      - ./wordpress:/var/www/html
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.${PROJECT_NAME}_nginx.rule=Host(`bo.${PROJECT_BASE_URL}`)
+      - traefik.http.routers.${PROJECT_NAME}_nginx.entrypoints=https
+      - traefik.http.routers.${PROJECT_NAME}_nginx.tls.certresolver=default
+
+  pma:
+    image: phpmyadmin/phpmyadmin
+    container_name: "${PROJECT_NAME}_pma"
+    environment:
+      PMA_HOST: $DB_HOST
+      PMA_USER: $DB_USER
+      PMA_PASSWORD: $DB_PASSWORD
+      PHP_UPLOAD_MAX_FILESIZE: 1G
+      PHP_MAX_INPUT_VARS: 1G
+    volumes:
+      - /var/run/docker.sock:/var/lib/mysql
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.${PROJECT_NAME}_pma.rule=Host(`pma.${PROJECT_BASE_URL}`)
+      - traefik.http.routers.${PROJECT_NAME}_pma.entrypoints=https
+      - traefik.http.routers.${PROJECT_NAME}_pma.tls.certresolver=default
+
+  portainer:
+    image: portainer/portainer
+    container_name: "${PROJECT_NAME}_portainer"
+    command: --no-auth -H unix:///var/run/docker.sock
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.${PROJECT_NAME}_portainer.rule=Host(`portainer.${PROJECT_BASE_URL}`)
+      - traefik.http.routers.${PROJECT_NAME}_portainer.entrypoints=https
+      - traefik.http.routers.${PROJECT_NAME}_portainer.tls.certresolver=default
+
+volumes:
+  wordpress:
+  mysql:
